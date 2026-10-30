@@ -6,6 +6,7 @@ authors = ["Mangount <mangounts@gmail.com>"]
 description = "Lightweight, QUIC-like multiplexed streams over the Noise Protocol Framework for Tokio"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/mangounts/noise-mux"
 
 [dependencies]
 tokio = { version = "1.38", features = ["io-util", "net", "sync", "rt"] }

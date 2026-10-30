@@ -1,0 +1,19 @@
+[package]
+name = "noise-mux"
+version = "0.1.0"
+edition = "2024"
+authors = ["Mangount <mangounts@gmail.com>"]
+description = "Lightweight, QUIC-like multiplexed streams over the Noise Protocol Framework for Tokio"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+tokio = { version = "1.38", features = ["io-util", "net", "sync", "rt"] }
+tokio-util = { version = "0.7", features = ["codec", "compat"] }
+futures = "0.3"
+snow = "0.9"
+yamux = "0.13"
+bytes = "1.6"
+
+[dev-dependencies]
+tokio = { version = "1.38", features = ["full"] }

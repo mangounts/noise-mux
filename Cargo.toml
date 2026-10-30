@@ -15,6 +15,7 @@ futures = "0.3"
 snow = "0.9"
 yamux = "0.13"
 bytes = "1.6"
+tokio_kcp = "0.9.8"
 
 [dev-dependencies]
 tokio = { version = "1.38", features = ["full"] }

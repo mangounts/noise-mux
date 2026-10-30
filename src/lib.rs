@@ -7,6 +7,7 @@ use std::task::Poll;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 
+pub use tokio_kcp::{KcpConfig, KcpNoDelayConfig};
 pub use yamux::StreamId;
 
 pub type SubStream = tokio_util::compat::Compat<yamux::Stream>;
@@ -38,6 +39,33 @@ pub struct NoiseMuxSession {
 }
 
 impl NoiseMuxSession {
+    /// Connect to a remote server over UDP using fast reliable ARQ (QUIC-like over UDP) without TLS,
+    /// perform the Noise handshake, and establish a multiplexed session.
+    pub async fn connect_udp<A: tokio::net::ToSocketAddrs>(addr: A, pattern: &str) -> io::Result<Self> {
+        let config = tokio_kcp::KcpConfig {
+            nodelay: tokio_kcp::KcpNoDelayConfig::fastest(),
+            ..Default::default()
+        };
+        Self::connect_udp_with_config(addr, pattern, config).await
+    }
+
+    /// Connect to a remote server over UDP with custom KCP configuration.
+    pub async fn connect_udp_with_config<A: tokio::net::ToSocketAddrs>(
+        addr: A,
+        pattern: &str,
+        config: tokio_kcp::KcpConfig,
+    ) -> io::Result<Self> {
+        let socket_addr = tokio::net::lookup_host(addr)
+            .await?
+            .next()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "could not resolve address"))?;
+        let stream = tokio_kcp::KcpStream::connect(&config, socket_addr)
+            .await
+            .map_err(io::Error::other)?;
+        Self::client(stream, pattern).await
+    }
+
+    /// Establish a multiplexed Noise session over any custom asynchronous stream.
     pub async fn client<T>(transport: T, pattern: &str) -> io::Result<Self>
     where
         T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -146,6 +174,7 @@ pub struct NoiseMuxServer {
 }
 
 impl NoiseMuxServer {
+    /// Accept a multiplexed Noise session over any custom asynchronous stream.
     pub async fn accept<T>(transport: T, pattern: &str) -> io::Result<Self>
     where
         T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -224,5 +253,49 @@ impl NoiseMuxServer {
             Some(Err(e)) => Err(e),
             None => Ok(None),
         }
+    }
+}
+
+/// A UDP listener for accepting encrypted, multiplexed Noise sessions without TLS.
+pub struct NoiseMuxListener {
+    listener: tokio_kcp::KcpListener,
+    pattern: String,
+}
+
+impl NoiseMuxListener {
+    /// Bind a UDP socket with fast reliable ARQ (QUIC-like over UDP) without TLS.
+    pub async fn bind<A: tokio::net::ToSocketAddrs>(addr: A, pattern: &str) -> io::Result<Self> {
+        let config = tokio_kcp::KcpConfig {
+            nodelay: tokio_kcp::KcpNoDelayConfig::fastest(),
+            ..Default::default()
+        };
+        Self::bind_with_config(addr, pattern, config).await
+    }
+
+    /// Bind a UDP socket with custom KCP configuration.
+    pub async fn bind_with_config<A: tokio::net::ToSocketAddrs>(
+        addr: A,
+        pattern: &str,
+        config: tokio_kcp::KcpConfig,
+    ) -> io::Result<Self> {
+        let listener = tokio_kcp::KcpListener::bind(config, addr)
+            .await
+            .map_err(io::Error::other)?;
+        Ok(Self {
+            listener,
+            pattern: pattern.to_string(),
+        })
+    }
+
+    /// Returns the local socket address of the underlying UDP socket.
+    pub fn local_addr(&self) -> io::Result<std::net::SocketAddr> {
+        self.listener.local_addr()
+    }
+
+    /// Accept the next incoming UDP session and perform the Noise handshake.
+    pub async fn accept(&mut self) -> io::Result<(NoiseMuxServer, std::net::SocketAddr)> {
+        let (stream, peer_addr) = self.listener.accept().await.map_err(io::Error::other)?;
+        let server = NoiseMuxServer::accept(stream, &self.pattern).await?;
+        Ok((server, peer_addr))
     }
 }
